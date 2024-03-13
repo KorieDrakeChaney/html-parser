@@ -14,7 +14,7 @@ use crate::entity::{
 };
 
 // https://html.spec.whatwg.org/#tokenization
-pub struct Scanner<'a> {
+pub struct Tokenizer<'a> {
     html: Peekable<Chars<'a>>,
 
     tokens: VecDeque<Token>,
@@ -36,7 +36,7 @@ pub struct Scanner<'a> {
     reconsume: bool,
 }
 
-impl<'a> Scanner<'a> {
+impl<'a> Tokenizer<'a> {
     pub fn new(html: &'a str) -> Self {
         let mut scanner = Self {
             html: html.chars().peekable(),
@@ -3819,13 +3819,13 @@ impl<'a> Scanner<'a> {
 mod tests {
     use crate::{
         tokenizer::token::{Doctype, Tag, Token},
-        Scanner,
+        Tokenizer,
     };
 
     #[test]
     fn test_comment() {
         let test = "<!--Hello World-->";
-        let scanner = Scanner::new(test);
+        let scanner = Tokenizer::new(test);
         let result = vec![Token::Comment("Hello World".to_string()), Token::EOF];
         assert_eq!(scanner.tokens, result);
     }
@@ -3833,7 +3833,7 @@ mod tests {
     #[test]
     fn test_basic_html() {
         let test = "<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Hello World</h1></body></html>";
-        let scanner = Scanner::new(test);
+        let scanner = Tokenizer::new(test);
         let result = vec![
             Token::DOCTYPE(Doctype::new_with_name("html".to_string())),
             Token::Tag(Tag::new_start_tag_with_name("html".to_string())),

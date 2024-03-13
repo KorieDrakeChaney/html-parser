@@ -1,4 +1,4 @@
 mod entity;
 mod tokenizer;
 
-pub use tokenizer::Scanner;
+pub use tokenizer::Tokenizer;
