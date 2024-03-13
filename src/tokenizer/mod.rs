@@ -30,6 +30,8 @@ pub struct Scanner<'a> {
 
     character_reference_code: u32,
 
+    open_tags: Vec<String>,
+
     reconsume: bool,
 }
 
@@ -44,6 +46,7 @@ impl<'a> Scanner<'a> {
             current_character: None,
             temporary_buffer: None,
             character_reference_code: 0,
+            open_tags: Vec::new(),
             reconsume: false,
         };
 
@@ -54,7 +57,6 @@ impl<'a> Scanner<'a> {
 
     pub fn scan(&mut self) {
         while self.tokens.back() != Some(&Token::EOF) {
-            println!("state: {:?}", self.current_state);
             match self.current_state {
                 State::Data => self.data_state(),
                 State::TagOpen => self.tag_open_state(),
@@ -131,8 +133,39 @@ impl<'a> Scanner<'a> {
                 State::CDATASection => self.cdata_section_state(),
                 State::CDATASectionBracket => self.cdata_section_bracket_state(),
                 State::CDATASectionEnd => self.cdata_section_end_state(),
-
-                _ => {}
+                State::RCDATA => self.rcdata_state(),
+                State::RAWTEXT => self.rawtext_state(),
+                State::ScriptData => self.script_data_state(),
+                State::PLAINTEXT => self.plaintext_state(),
+                State::RCDATALessThanSign => self.rcdata_less_than_sign_state(),
+                State::RCDATAEndTagOpen => self.rcdata_end_tag_open_state(),
+                State::RCDATAEndTagName => self.rcdata_end_tag_name_state(),
+                State::RAWTEXTLessThanSign => self.rawtext_less_than_sign_state(),
+                State::RAWTEXTEndTagOpen => self.rawtext_end_tag_open_state(),
+                State::RAWTEXTEndTagName => self.rawtext_end_tag_name_state(),
+                State::ScriptDataLessThanSign => self.script_data_less_than_sign_state(),
+                State::ScriptDataEndTagOpen => self.script_data_end_tag_open_state(),
+                State::ScriptDataEndTagName => self.script_data_end_tag_name_state(),
+                State::ScriptDataEscapeStart => self.script_data_escape_start_state(),
+                State::ScriptDataEscapeStartDash => self.script_data_escape_start_dash_state(),
+                State::ScriptDataEscaped => self.script_data_escaped_state(),
+                State::ScriptDataEscapedDash => self.script_data_escaped_dash_state(),
+                State::ScriptDataEscapedDashDash => self.script_data_escaped_dash_dash_state(),
+                State::ScriptDataEscapedLessThanSign => {
+                    self.script_data_escaped_less_than_sign_state()
+                }
+                State::ScriptDataEscapedEndTagOpen => self.script_data_escaped_end_tag_open_state(),
+                State::ScriptDataEscapedEndTagName => self.script_data_escaped_end_tag_name_state(),
+                State::ScriptDataDoubleEscapeStart => self.script_data_double_escape_start_state(),
+                State::ScriptDataDoubleEscaped => self.script_data_double_escaped_state(),
+                State::ScriptDataDoubleEscapedDash => self.script_data_double_escaped_dash_state(),
+                State::ScriptDataDoubleEscapedDashDash => {
+                    self.script_data_double_escaped_dash_dash_state()
+                }
+                State::ScriptDataDoubleEscapedLessThanSign => {
+                    self.script_data_double_escaped_less_than_sign_state()
+                }
+                State::ScriptDataDoubleEscapeEnd => self.script_data_double_escape_end_state(),
             }
         }
     }
@@ -2247,6 +2280,1132 @@ impl<'a> Scanner<'a> {
         }
     }
 
+    // https://html.spec.whatwg.org/#rcdata-state
+    fn rcdata_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+0026 AMPERSAND (&)
+                // Set the return state to the RCDATA state. Switch to the character reference state.
+                '&' => {
+                    self.set_return_state(State::RCDATA);
+                    self.switch_to(State::CharacterReference);
+                }
+
+                // U+003C LESS-THAN SIGN (<)
+                // Switch to the RCDATA less-than sign state.
+                '<' => {
+                    self.switch_to(State::RCDATALessThanSign);
+                }
+
+                // U+0000 NULL
+                // This is an unexpected-null-character parse error. Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                '\u{0000}' => {
+                    self.emit_character_token(char::REPLACEMENT_CHARACTER);
+                }
+
+                // Anything else
+                // Emit the current input character as a character token.
+                _ => {
+                    self.emit_character_token(c);
+                }
+            }
+        } else {
+            // EOF
+            // Emit an end-of-file token.
+            self.emit_end_of_file_token();
+        }
+    }
+
+    // https://html.spec.whatwg.org/#rawtext-state
+    fn rawtext_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+003C LESS-THAN SIGN (<)
+                // Switch to the RAWTEXT less-than sign state.
+                '<' => {
+                    self.switch_to(State::RAWTEXTLessThanSign);
+                }
+
+                // U+0000 NULL
+                // This is an unexpected-null-character parse error. Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                '\u{0000}' => {
+                    self.emit_character_token(char::REPLACEMENT_CHARACTER);
+                }
+
+                // Anything else
+                // Emit the current input character as a character token.
+                _ => {
+                    self.emit_character_token(c);
+                }
+            }
+        } else {
+            // EOF
+            // Emit an end-of-file token.
+            self.emit_end_of_file_token();
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-state
+    fn script_data_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+003C LESS-THAN SIGN (<)
+                // Switch to the script data less-than sign state.
+                '<' => {
+                    self.switch_to(State::ScriptDataLessThanSign);
+                }
+
+                // U+0000 NULL
+                // This is an unexpected-null-character parse error. Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                '\u{0000}' => {
+                    self.emit_character_token(char::REPLACEMENT_CHARACTER);
+                }
+
+                // Anything else
+                // Emit the current input character as a character token.
+                _ => {
+                    self.emit_character_token(c);
+                }
+            }
+        } else {
+            // EOF
+            // Emit an end-of-file token.
+            self.emit_end_of_file_token();
+        }
+    }
+
+    // https://html.spec.whatwg.org/#plaintext-state
+    fn plaintext_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            // U+0000 NULL
+            // This is an unexpected-null-character parse error. Emit a U+FFFD REPLACEMENT CHARACTER character token.
+            if c == '\u{0000}' {
+                self.emit_character_token(char::REPLACEMENT_CHARACTER);
+            } else {
+                // Anything else
+                // Emit the current input character as a character token.
+                self.emit_character_token(c);
+            }
+        } else {
+            // EOF
+            // Emit an end-of-file token.
+            self.emit_end_of_file_token();
+        }
+    }
+
+    // https://html.spec.whatwg.org/#rcdata-less-than-sign-state
+    fn rcdata_less_than_sign_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+002F SOLIDUS (/)
+                // Set the temporary buffer to the empty string. Switch to the RCDATA end tag open state.
+                '/' => {
+                    self.set_temporary_buffer_to_empty_string();
+                    self.switch_to(State::RCDATAEndTagOpen);
+                }
+
+                // Anything else
+                // Emit a U+003C LESS-THAN SIGN character token. Reconsume in the RCDATA state.
+                _ => {
+                    self.emit_character_token('<');
+                    self.reconsume_in(State::RCDATA);
+                }
+            }
+        } else {
+            // EOF
+            // Emit a U+003C LESS-THAN SIGN character token. Reconsume in the RCDATA state.
+            self.emit_character_token('<');
+            self.reconsume_in(State::RCDATA);
+        }
+    }
+
+    // https://html.spec.whatwg.org/#rcdata-end-tag-open-state
+    fn rcdata_end_tag_open_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            // ASCII alpha
+            // Create a new end tag token, set its tag name to the empty string. Reconsume in the RCDATA end tag name state.
+            if c.is_ascii_alphabetic() {
+                self.create_new_end_tag_token();
+                self.reconsume_in(State::RCDATAEndTagName);
+            } else {
+                // Anything else
+                // Emit a U+003C LESS-THAN SIGN character token and a U+002F SOLIDUS character token. Reconsume in the RCDATA state.
+                self.emit_character_token('<');
+                self.emit_character_token('/');
+                self.reconsume_in(State::RCDATA);
+            }
+        } else {
+            // EOF
+            // Emit a U+003C LESS-THAN SIGN character token, a U+002F SOLIDUS character token, and an end-of-file token.
+            self.emit_character_token('<');
+            self.emit_character_token('/');
+            self.emit_end_of_file_token();
+        }
+    }
+
+    // https://html.spec.whatwg.org/#rcdata-end-tag-name-state
+    fn rcdata_end_tag_name_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+0009 CHARACTER TABULATION (tab)
+                // U+000A LINE FEED (LF)
+                // U+000C FORM FEED (FF)
+                // U+0020 SPACE
+                // If the current end tag token is an appropriate end tag token, then switch to the before attribute name state.
+                // Otherwise, treat it as per the "anything else" entry below.
+                '\u{0009}' | '\u{000A}' | '\u{000C}' | ' ' => {
+                    if self.current_end_tag_token_is_appropriate() {
+                        self.switch_to(State::BeforeAttributeName);
+                    } else {
+                        self.emit_character_token('<');
+                        self.emit_character_token('/');
+                        for c in self.get_temporary_buffer().chars() {
+                            self.emit_character_token(c);
+                        }
+                        self.reconsume_in(State::RCDATA);
+                    }
+                }
+
+                // U+002F SOLIDUS (/)
+                // If the current end tag token is an appropriate end tag token, then switch to the self-closing start tag state.
+                // Otherwise, treat it as per the "anything else" entry below.
+                '/' => {
+                    if self.current_end_tag_token_is_appropriate() {
+                        self.switch_to(State::SelfClosingStartTag);
+                    } else {
+                        self.emit_character_token('<');
+                        self.emit_character_token('/');
+                        for c in self.get_temporary_buffer().chars() {
+                            self.emit_character_token(c);
+                        }
+                        self.reconsume_in(State::RCDATA);
+                    }
+                }
+
+                // U+003E GREATER-THAN SIGN (>)
+                // If the current end tag token is an appropriate end tag token, then switch to the data state and emit the current tag token.
+                // Otherwise, treat it as per the "anything else" entry below.
+                '>' => {
+                    if self.current_end_tag_token_is_appropriate() {
+                        self.switch_to(State::Data);
+                        self.emit_current_token();
+                    } else {
+                        self.emit_character_token('<');
+                        self.emit_character_token('/');
+                        for c in self.get_temporary_buffer().chars() {
+                            self.emit_character_token(c);
+                        }
+                        self.reconsume_in(State::RCDATA);
+                    }
+                }
+
+                // ASCII upper alpha
+                // Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the current tag token's tag name.
+                // Append the current input character to the temporary buffer.
+                'A'..='Z' => {
+                    self.append_character_to_current_tag_token((c as u8 + 0x20) as char);
+                    self.append_character_to_temporary_buffer(c);
+                }
+
+                // ASCII lower alpha
+                // Append the current input character to the current tag token's tag name.
+                // Append the current input character to the temporary buffer.
+                'a'..='z' => {
+                    self.append_character_to_current_tag_token(c);
+                    self.append_character_to_temporary_buffer(c);
+                }
+
+                // Anything else
+                // Emit a U+003C LESS-THAN SIGN character token, a U+002F SOLIDUS character token, and a character token for each of the characters in the temporary buffer
+                // (in the order they were added to the buffer). Reconsume in the RCDATA state.
+                _ => {
+                    self.emit_character_token('<');
+                    self.emit_character_token('/');
+                    for c in self.get_temporary_buffer().chars() {
+                        self.emit_character_token(c);
+                    }
+                    self.reconsume_in(State::RCDATA);
+                }
+            }
+        } else {
+            // EOF
+            // Emit a U+003C LESS-THAN SIGN character token, a U+002F SOLIDUS character token, and a character token for each of the characters in the temporary buffer
+            // (in the order they were added to the buffer). Reconsume in the RCDATA state.
+            self.emit_character_token('<');
+            self.emit_character_token('/');
+            for c in self.get_temporary_buffer().chars() {
+                self.emit_character_token(c);
+            }
+            self.reconsume_in(State::RCDATA);
+        }
+    }
+
+    // https://html.spec.whatwg.org/#rawtext-less-than-sign-state
+    fn rawtext_less_than_sign_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+002F SOLIDUS (/)
+                // Set the temporary buffer to the empty string. Switch to the RAWTEXT end tag open state.
+                '/' => {
+                    self.set_temporary_buffer_to_empty_string();
+                    self.switch_to(State::RAWTEXTEndTagOpen);
+                }
+
+                // Anything else
+                // Emit a U+003C LESS-THAN SIGN character token. Reconsume in the RAWTEXT state.
+                _ => {
+                    self.emit_character_token('<');
+                    self.reconsume_in(State::RAWTEXT);
+                }
+            }
+        } else {
+            // EOF
+            // Emit a U+003C LESS-THAN SIGN character token. Reconsume in the RAWTEXT state.
+            self.emit_character_token('<');
+            self.reconsume_in(State::RAWTEXT);
+        }
+    }
+
+    // https://html.spec.whatwg.org/#rawtext-end-tag-open-state
+    fn rawtext_end_tag_open_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            // ASCII alpha
+            // Create a new end tag token, set its tag name to the empty string. Reconsume in the RAWTEXT end tag name state.
+            if c.is_ascii_alphabetic() {
+                self.create_new_end_tag_token();
+                self.reconsume_in(State::RAWTEXTEndTagName);
+            } else {
+                // Anything else
+                // Emit a U+003C LESS-THAN SIGN character token and a U+002F SOLIDUS character token. Reconsume in the RAWTEXT state.
+                self.emit_character_token('<');
+                self.emit_character_token('/');
+                self.reconsume_in(State::RAWTEXT);
+            }
+        } else {
+            // EOF
+            // Emit a U+003C LESS-THAN SIGN character token, a U+002F SOLIDUS character token, and an end-of-file token.
+            self.emit_character_token('<');
+            self.emit_character_token('/');
+            self.emit_end_of_file_token();
+        }
+    }
+
+    // https://html.spec.whatwg.org/#rawtext-end-tag-name-state
+    fn rawtext_end_tag_name_state(&mut self) {
+        // Consume the next input:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+0009 CHARACTER TABULATION (tab)
+                // U+000A LINE FEED (LF)
+                // U+000C FORM FEED (FF)
+                // U+0020 SPACE
+                // If the current end tag token is an appropriate end tag token, then switch to the before attribute name state.
+                // Otherwise, treat it as per the "anything else" entry below.
+                '\u{0009}' | '\u{000A}' | '\u{000C}' | ' ' => {
+                    if self.current_end_tag_token_is_appropriate() {
+                        self.switch_to(State::BeforeAttributeName);
+                    } else {
+                        self.emit_character_token('<');
+                        self.emit_character_token('/');
+                        for c in self.get_temporary_buffer().chars() {
+                            self.emit_character_token(c);
+                        }
+                        self.reconsume_in(State::RAWTEXT);
+                    }
+                }
+
+                // U+002F SOLIDUS (/)
+                // If the current end tag token is an appropriate end tag token, then switch to the self-closing start tag state.
+                // Otherwise, treat it as per the "anything else" entry below.
+                '/' => {
+                    if self.current_end_tag_token_is_appropriate() {
+                        self.switch_to(State::SelfClosingStartTag);
+                    } else {
+                        self.emit_character_token('<');
+                        self.emit_character_token('/');
+                        for c in self.get_temporary_buffer().chars() {
+                            self.emit_character_token(c);
+                        }
+                        self.reconsume_in(State::RAWTEXT);
+                    }
+                }
+
+                // U+003E GREATER-THAN SIGN (>)
+                // If the current end tag token is an appropriate end tag token, then switch to the data state and emit the current tag token.
+                // Otherwise, treat it as per the "anything else" entry below.
+                '>' => {
+                    if self.current_end_tag_token_is_appropriate() {
+                        self.switch_to(State::Data);
+                        self.emit_current_token();
+                    } else {
+                        self.emit_character_token('<');
+                        self.emit_character_token('/');
+                        for c in self.get_temporary_buffer().chars() {
+                            self.emit_character_token(c);
+                        }
+                        self.reconsume_in(State::RAWTEXT);
+                    }
+                }
+
+                // ASCII upper alpha
+                // Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the current tag token's tag name.
+                // Append the current input character to the temporary buffer.
+                'A'..='Z' => {
+                    self.append_character_to_current_tag_token((c as u8 + 0x20) as char);
+                    self.append_character_to_temporary_buffer(c);
+                }
+
+                // ASCII lower alpha
+                // Append the current input character to the current tag token's tag name.
+                // Append the current input character to the temporary buffer.
+                'a'..='z' => {
+                    self.append_character_to_current_tag_token(c);
+                    self.append_character_to_temporary_buffer(c);
+                }
+
+                // Anything else
+                // Emit a U+003C LESS-THAN SIGN character token, a U+002F SOLIDUS character token, and a character token for each of the characters in the temporary buffer
+                // (in the order they were added to the buffer). Reconsume in the RAWTEXT state.
+                _ => {
+                    self.emit_character_token('<');
+                    self.emit_character_token('/');
+                    for c in self.get_temporary_buffer().chars() {
+                        self.emit_character_token(c);
+                    }
+                    self.reconsume_in(State::RAWTEXT);
+                }
+            }
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-less-than-sign-state
+    fn script_data_less_than_sign_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+002F SOLIDUS (/)
+                // Set the temporary buffer to the empty string. Switch to the script data end tag open state.
+                '/' => {
+                    self.set_temporary_buffer_to_empty_string();
+                    self.switch_to(State::ScriptDataEndTagOpen);
+                }
+
+                // U+0021 EXCLAMATION MARK (!)
+                // Switch to the script data escape start state. Emit a U+003C LESS-THAN SIGN character token and a U+0021 EXCLAMATION MARK character token.
+                '!' => {
+                    self.switch_to(State::ScriptDataEscapeStart);
+                    self.emit_character_token('<');
+                    self.emit_character_token('!');
+                }
+
+                // Anything else
+                // Emit a U+003C LESS-THAN SIGN character token. Reconsume in the script data state.
+                _ => {
+                    self.emit_character_token('<');
+                    self.reconsume_in(State::ScriptData);
+                }
+            }
+        } else {
+            // EOF
+            // Emit a U+003C LESS-THAN SIGN character token. Reconsume in the script data state.
+            self.emit_character_token('<');
+            self.reconsume_in(State::ScriptData);
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-end-tag-open-state
+    fn script_data_end_tag_open_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            // ASCII alpha
+            // Create a new end tag token, set its tag name to the empty string. Reconsume in the script data end tag name state.
+            if c.is_ascii_alphabetic() {
+                self.create_new_end_tag_token();
+                self.reconsume_in(State::ScriptDataEndTagName);
+            } else {
+                // Anything else
+                // Emit a U+003C LESS-THAN SIGN character token and a U+002F SOLIDUS character token. Reconsume in the script data state.
+                self.emit_character_token('<');
+                self.emit_character_token('/');
+                self.reconsume_in(State::ScriptData);
+            }
+        } else {
+            // EOF
+            // Emit a U+003C LESS-THAN SIGN character token, a U+002F SOLIDUS character token, and an end-of-file token.
+            self.emit_character_token('<');
+            self.emit_character_token('/');
+            self.emit_end_of_file_token();
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-end-tag-name-state
+    fn script_data_end_tag_name_state(&mut self) {
+        // Consume the next input character
+
+        if let Some(c) = self.consume() {
+            match c {
+                // U+0009 CHARACTER TABULATION (tab)
+                // U+000A LINE FEED (LF)
+                // U+000C FORM FEED (FF)
+                // U+0020 SPACE
+                // If the current end tag token is an appropriate end tag token, then switch to the before attribute name state.
+                // Otherwise, treat it as per the "anything else" entry below.
+                '\u{0009}' | '\u{000A}' | '\u{000C}' | ' ' => {
+                    if self.current_end_tag_token_is_appropriate() {
+                        self.switch_to(State::BeforeAttributeName);
+                    } else {
+                        self.emit_character_token('<');
+                        self.emit_character_token('/');
+                        for c in self.get_temporary_buffer().chars() {
+                            self.emit_character_token(c);
+                        }
+                        self.reconsume_in(State::ScriptData);
+                    }
+                }
+
+                // U+002F SOLIDUS (/)
+                // If the current end tag token is an appropriate end tag token, then switch to the self-closing start tag state.
+                // Otherwise, treat it as per the "anything else" entry below.
+                '/' => {
+                    if self.current_end_tag_token_is_appropriate() {
+                        self.switch_to(State::SelfClosingStartTag);
+                    } else {
+                        self.emit_character_token('<');
+                        self.emit_character_token('/');
+                        for c in self.get_temporary_buffer().chars() {
+                            self.emit_character_token(c);
+                        }
+                        self.reconsume_in(State::ScriptData);
+                    }
+                }
+
+                // U+003E GREATER-THAN SIGN (>)
+                // If the current end tag token is an appropriate end tag token, then switch to the data state and emit the current tag token.
+                // Otherwise, treat it as per the "anything else" entry below.
+                '>' => {
+                    if self.current_end_tag_token_is_appropriate() {
+                        self.switch_to(State::Data);
+                        self.emit_current_token();
+                    } else {
+                        self.emit_character_token('<');
+                        self.emit_character_token('/');
+                        for c in self.get_temporary_buffer().chars() {
+                            self.emit_character_token(c);
+                        }
+                        self.reconsume_in(State::ScriptData);
+                    }
+                }
+
+                // ASCII upper alpha
+                // Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the current tag token's tag name.
+                // Append the current input character to the temporary buffer.
+                'A'..='Z' => {
+                    self.append_character_to_current_tag_token((c as u8 + 0x20) as char);
+                    self.append_character_to_temporary_buffer(c);
+                }
+
+                // ASCII lower alpha
+                // Append the current input character to the current tag token's tag name.
+                // Append the current input character to the temporary buffer.
+                'a'..='z' => {
+                    self.append_character_to_current_tag_token(c);
+                    self.append_character_to_temporary_buffer(c);
+                }
+
+                // Anything else
+                // Emit a U+003C LESS-THAN SIGN character token, a U+002F SOLIDUS character token, and a character token for each of the characters in the temporary buffer
+                // (in the order they were added to the buffer). Reconsume in the script data state.
+                _ => {
+                    self.emit_character_token('<');
+                    self.emit_character_token('/');
+                    for c in self.get_temporary_buffer().chars() {
+                        self.emit_character_token(c);
+                    }
+                    self.reconsume_in(State::ScriptData);
+                }
+            }
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-escape-start-state
+    fn script_data_escape_start_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            // U+002D HYPHEN-MINUS (-)
+            // Switch to the script data escape start dash state. Emit a U+002D HYPHEN-MINUS character token.
+            if c == '-' {
+                self.switch_to(State::ScriptDataEscapeStartDash);
+                self.emit_character_token('-');
+            } else {
+                // Anything else
+                // Reconsume in the script data state.
+                self.reconsume_in(State::ScriptData);
+            }
+        } else {
+            // EOF
+            // Reconsume in the script data state.
+            self.reconsume_in(State::ScriptData);
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-escape-start-dash-state
+    fn script_data_escape_start_dash_state(&mut self) {
+        // Consume the next input character:
+
+        if let Some(c) = self.consume() {
+            // U+002D HYPHEN-MINUS (-)
+            // Switch to the script data escaped dash dash state. Emit a U+002D HYPHEN-MINUS character token.
+            if c == '-' {
+                self.switch_to(State::ScriptDataEscapedDashDash);
+                self.emit_character_token('-');
+            } else {
+                // Anything else
+                // Reconsume in the script data state.
+                self.reconsume_in(State::ScriptData);
+            }
+        } else {
+            // EOF
+            // Reconsume in the script data state.
+            self.reconsume_in(State::ScriptData);
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-escaped-state
+    fn script_data_escaped_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+002D HYPHEN-MINUS (-)
+                // Switch to the script data escaped dash state. Emit a U+002D HYPHEN-MINUS character token.
+                '-' => {
+                    self.switch_to(State::ScriptDataEscapedDash);
+                    self.emit_character_token('-');
+                }
+
+                // U+003C LESS-THAN SIGN (<)
+                // Switch to the script data escaped less-than sign state.
+                '<' => {
+                    self.switch_to(State::ScriptDataEscapedLessThanSign);
+                }
+
+                // U+0000 NULL
+                // This is an unexpected-null-character parse error. Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                '\u{0000}' => {
+                    self.emit_character_token(char::REPLACEMENT_CHARACTER);
+                }
+
+                // Anything else
+                // Emit the current input character as a character token.
+                _ => {
+                    self.emit_character_token(c);
+                }
+            }
+        } else {
+            // EOF
+            // This is an eof-in-script-html-comment-like-text parse error. Emit an end-of-file token.
+            self.emit_end_of_file_token();
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-escaped-dash-state
+    fn script_data_escaped_dash_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+002D HYPHEN-MINUS (-)
+                // Switch to the script data escaped dash dash state. Emit a U+002D HYPHEN-MINUS character token.
+                '-' => {
+                    self.switch_to(State::ScriptDataEscapedDashDash);
+                    self.emit_character_token('-');
+                }
+
+                // U+003C LESS-THAN SIGN (<)
+                // Switch to the script data escaped less-than sign state.
+                '<' => {
+                    self.switch_to(State::ScriptDataEscapedLessThanSign);
+                }
+
+                // U+0000 NULL
+                // This is an unexpected-null-character parse error. Switch to the script data escaped state. Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                '\u{0000}' => {
+                    self.switch_to(State::ScriptDataEscaped);
+                    self.emit_character_token(char::REPLACEMENT_CHARACTER);
+                }
+
+                // Anything else
+                // Switch to the script data escaped state. Emit the current input character as a character token.
+                _ => {
+                    self.switch_to(State::ScriptDataEscaped);
+                    self.emit_character_token(c);
+                }
+            }
+        } else {
+            // EOF
+            // This is an eof-in-script-html-comment-like-text parse error. Emit an end-of-file token.
+            self.emit_end_of_file_token();
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-escaped-dash-dash-state
+    fn script_data_escaped_dash_dash_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+002D HYPHEN-MINUS (-)
+                // Emit a U+002D HYPHEN-MINUS character token.
+                '-' => {
+                    self.emit_character_token('-');
+                }
+
+                // U+003C LESS-THAN SIGN (<)
+                // Switch to the script data escaped less-than sign state.
+                '<' => {
+                    self.switch_to(State::ScriptDataEscapedLessThanSign);
+                }
+
+                // U+003E GREATER-THAN SIGN (>)
+                // Switch to the script data state. Emit a U+003E GREATER-THAN SIGN character token.
+                '>' => {
+                    self.switch_to(State::ScriptData);
+                    self.emit_character_token('>');
+                }
+
+                // U+0000 NULL
+                // This is an unexpected-null-character parse error. Switch to the script data escaped state. Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                '\u{0000}' => {
+                    self.switch_to(State::ScriptDataEscaped);
+                    self.emit_character_token(char::REPLACEMENT_CHARACTER);
+                }
+
+                // Anything else
+                // Switch to the script data escaped state. Emit the current input character as a character token.
+                _ => {
+                    self.switch_to(State::ScriptDataEscaped);
+                    self.emit_character_token(c);
+                }
+            }
+        } else {
+            // EOF
+            // This is an eof-in-script-html-comment-like-text parse error. Emit an end-of-file token.
+            self.emit_end_of_file_token();
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-escaped-less-than-sign-state
+    fn script_data_escaped_less_than_sign_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+002F SOLIDUS (/)
+                // Set the temporary buffer to the empty string. Switch to the script data escaped end tag open state.
+                '/' => {
+                    self.set_temporary_buffer_to_empty_string();
+                    self.switch_to(State::ScriptDataEscapedEndTagOpen);
+                }
+
+                // ASCII alpha
+                // Set the temporary buffer to the empty string. Emit a U+003C LESS-THAN SIGN character token. Reconsume in the script data double escape start state.
+                'A'..='Z' | 'a'..='z' => {
+                    self.set_temporary_buffer_to_empty_string();
+                    self.emit_character_token('<');
+                    self.reconsume_in(State::ScriptDataDoubleEscapeStart);
+                }
+
+                // Anything else
+                // Emit a U+003C LESS-THAN SIGN character token. Reconsume in the script data escaped state.
+                _ => {
+                    self.emit_character_token('<');
+                    self.reconsume_in(State::ScriptDataEscaped);
+                }
+            }
+        } else {
+            // EOF
+            // Emit a U+003C LESS-THAN SIGN character token. Reconsume in the script data escaped state.
+            self.emit_character_token('<');
+            self.reconsume_in(State::ScriptDataEscaped);
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-escaped-end-tag-open-state
+    fn script_data_escaped_end_tag_open_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            // ASCII alpha
+            // Create a new end tag token, set its tag name to the empty string. Reconsume in the script data escaped end tag name state.
+            if c.is_ascii_alphabetic() {
+                self.create_new_end_tag_token();
+                self.reconsume_in(State::ScriptDataEscapedEndTagName);
+            } else {
+                // Anything else
+                // Emit a U+003C LESS-THAN SIGN character token and a U+002F SOLIDUS character token. Reconsume in the script data escaped state.
+                self.emit_character_token('<');
+                self.emit_character_token('/');
+                self.reconsume_in(State::ScriptDataEscaped);
+            }
+        } else {
+            // EOF
+            // Emit a U+003C LESS-THAN SIGN character token and a U+002F SOLIDUS character token. Reconsume in the script data escaped state.
+            self.emit_character_token('<');
+            self.emit_character_token('/');
+            self.reconsume_in(State::ScriptDataEscaped);
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-escaped-end-tag-name-state
+    fn script_data_escaped_end_tag_name_state(&mut self) {
+        // Consume the next inptu character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+0009 CHARACTER TABULATION (tab)
+                // U+000A LINE FEED (LF)
+                // U+000C FORM FEED (FF)
+                // U+0020 SPACE
+                // If the current end tag token is an appropriate end tag token, then switch to the before attribute name state.
+                // Otherwise, treat it as per the "anything else" entry below.
+                '\u{0009}' | '\u{000A}' | '\u{000C}' | ' ' => {
+                    if self.current_end_tag_token_is_appropriate() {
+                        self.switch_to(State::BeforeAttributeName);
+                    } else {
+                        self.emit_character_token('<');
+                        self.emit_character_token('/');
+                        for c in self.get_temporary_buffer().chars() {
+                            self.emit_character_token(c);
+                        }
+                        self.reconsume_in(State::ScriptDataEscaped);
+                    }
+                }
+
+                // U+002F SOLIDUS (/)
+                // If the current end tag token is an appropriate end tag token, then switch to the self-closing start tag state.
+                // Otherwise, treat it as per the "anything else" entry below.
+                '/' => {
+                    if self.current_end_tag_token_is_appropriate() {
+                        self.switch_to(State::SelfClosingStartTag);
+                    } else {
+                        self.emit_character_token('<');
+                        self.emit_character_token('/');
+                        for c in self.get_temporary_buffer().chars() {
+                            self.emit_character_token(c);
+                        }
+                        self.reconsume_in(State::ScriptDataEscaped);
+                    }
+                }
+
+                // U+003E GREATER-THAN SIGN (>)
+                // If the current end tag token is an appropriate end tag token, then switch to the data state and emit the current tag token.
+                // Otherwise, treat it as per the "anything else" entry below.
+                '>' => {
+                    if self.current_end_tag_token_is_appropriate() {
+                        self.switch_to(State::Data);
+                        self.emit_current_token();
+                    } else {
+                        self.emit_character_token('<');
+                        self.emit_character_token('/');
+                        for c in self.get_temporary_buffer().chars() {
+                            self.emit_character_token(c);
+                        }
+                        self.reconsume_in(State::ScriptDataEscaped);
+                    }
+                }
+
+                // ASCII upper alpha
+                // Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the current tag token's tag name.
+                // Append the current input character to the temporary buffer.
+                'A'..='Z' => {
+                    self.append_character_to_current_tag_token((c as u8 + 0x20) as char);
+                    self.append_character_to_temporary_buffer(c);
+                }
+
+                // ASCII lower alpha
+                // Append the current input character to the current tag token's tag name.
+                // Append the current input character to the temporary buffer.
+                'a'..='z' => {
+                    self.append_character_to_current_tag_token(c);
+                    self.append_character_to_temporary_buffer(c);
+                }
+
+                // Anything else
+                // Emit a U+003C LESS-THAN SIGN character token, a U+002F SOLIDUS character token, and a character token for each of the characters in the temporary buffer
+                // (in the order they were added to the buffer). Reconsume in the script data escaped state.
+                _ => {
+                    self.emit_character_token('<');
+                    self.emit_character_token('/');
+                    for c in self.get_temporary_buffer().chars() {
+                        self.emit_character_token(c);
+                    }
+                    self.reconsume_in(State::ScriptDataEscaped);
+                }
+            }
+        } else {
+            // EOF
+            // Emit a U+003C LESS-THAN SIGN character token, a U+002F SOLIDUS character token, and a character token for each of the characters in the temporary buffer
+            // (in the order they were added to the buffer). Reconsume in the script data escaped state.
+            self.emit_character_token('<');
+            self.emit_character_token('/');
+            for c in self.get_temporary_buffer().chars() {
+                self.emit_character_token(c);
+            }
+            self.reconsume_in(State::ScriptDataEscaped);
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-double-escape-start-state
+    fn script_data_double_escape_start_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+0009 CHARACTER TABULATION (tab)
+                // U+000A LINE FEED (LF)
+                // U+000C FORM FEED (FF)
+                // U+0020 SPACE
+                // U+002F SOLIDUS (/)
+                // U+003E GREATER-THAN SIGN (>)
+                // If the temporary buffer is the string "script", then switch to the script data double escaped state.
+                // Otherwise, switch to the script data escaped state. Emit the current input character as a character token.
+                '\u{0009}' | '\u{000A}' | '\u{000C}' | ' ' | '/' | '>' => {
+                    if self.get_temporary_buffer() == "script" {
+                        self.switch_to(State::ScriptDataDoubleEscaped);
+                    } else {
+                        self.switch_to(State::ScriptDataEscaped);
+                        self.emit_character_token(c);
+                    }
+                }
+
+                // ASCII upper alpha
+                // Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the temporary buffer.
+                // Emit the current input character as a character token.
+                'A'..='Z' => {
+                    self.append_character_to_temporary_buffer((c as u8 + 0x20) as char);
+                    self.emit_character_token(c);
+                }
+
+                // ASCII lower alpha
+                // Append the current input character to the temporary buffer.
+                // Emit the current input character as a character token.
+                'a'..='z' => {
+                    self.append_character_to_temporary_buffer(c);
+                    self.emit_character_token(c);
+                }
+
+                // Anything else
+                // Reconsume in the script data escaped state.
+                _ => {
+                    self.reconsume_in(State::ScriptDataEscaped);
+                }
+            }
+        } else {
+            // EOF
+            // Reconsume in the script data escaped state.
+            self.reconsume_in(State::ScriptDataEscaped);
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-double-escaped-state
+    fn script_data_double_escaped_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+002D HYPHEN-MINUS (-)
+                // Switch to the script data double escaped dash state. Emit a U+002D HYPHEN-MINUS character token.
+                '-' => {
+                    self.switch_to(State::ScriptDataDoubleEscapedDash);
+                    self.emit_character_token('-');
+                }
+
+                // U+003C LESS-THAN SIGN (<)
+                // Switch to the script data double escaped less-than sign state. Emit a U+003C LESS-THAN SIGN character token.
+                '<' => {
+                    self.switch_to(State::ScriptDataDoubleEscapedLessThanSign);
+                    self.emit_character_token('<');
+                }
+
+                // U+0000 NULL
+                // This is an unexpected-null-character parse error. Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                '\u{0000}' => {
+                    self.emit_character_token(char::REPLACEMENT_CHARACTER);
+                }
+
+                // Anything else
+                // Emit the current input character as a character token.
+                _ => {
+                    self.emit_character_token(c);
+                }
+            }
+        } else {
+            // EOF
+            // This is an eof-in-script-html-comment-like-text parse error. Emit an end-of-file token.
+            self.emit_end_of_file_token();
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-double-escaped-dash-state
+    fn script_data_double_escaped_dash_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+002D HYPHEN-MINUS (-)
+                // Switch to the script data double escaped dash dash state. Emit a U+002D HYPHEN-MINUS character token.
+                '-' => {
+                    self.switch_to(State::ScriptDataDoubleEscapedDashDash);
+                    self.emit_character_token('-');
+                }
+
+                // U+003C LESS-THAN SIGN (<)
+                // Switch to the script data double escaped less-than sign state. Emit a U+003C LESS-THAN SIGN character token.
+                '<' => {
+                    self.switch_to(State::ScriptDataDoubleEscapedLessThanSign);
+                    self.emit_character_token('<');
+                }
+
+                // U+0000 NULL
+                // This is an unexpected-null-character parse error. Switch to the script data double escaped state. Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                '\u{0000}' => {
+                    self.switch_to(State::ScriptDataDoubleEscaped);
+                    self.emit_character_token(char::REPLACEMENT_CHARACTER);
+                }
+
+                // Anything else
+                // Switch to the script data double escaped state. Emit the current input character as a character token.
+                _ => {
+                    self.switch_to(State::ScriptDataDoubleEscaped);
+                    self.emit_character_token(c);
+                }
+            }
+        } else {
+            // EOF
+            // This is an eof-in-script-html-comment-like-text parse error. Emit an end-of-file token.
+            self.emit_end_of_file_token();
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-double-escaped-dash-dash-state
+    fn script_data_double_escaped_dash_dash_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+002D HYPHEN-MINUS (-)
+                // Emit a U+002D HYPHEN-MINUS character token.
+                '-' => {
+                    self.emit_character_token('-');
+                }
+
+                // U+003C LESS-THAN SIGN (<)
+                // Switch to the script data double escaped less-than sign state. Emit a U+003C LESS-THAN SIGN character token.
+                '<' => {
+                    self.switch_to(State::ScriptDataDoubleEscapedLessThanSign);
+                }
+
+                // U+003E GREATER-THAN SIGN (>)
+                // Switch to the script data state. Emit a U+003E GREATER-THAN SIGN character token.
+                '>' => {
+                    self.switch_to(State::ScriptData);
+                    self.emit_character_token('>');
+                }
+
+                // U+0000 NULL
+                // This is an unexpected-null-character parse error. Switch to the script data double escaped state. Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                '\u{0000}' => {
+                    self.switch_to(State::ScriptDataDoubleEscaped);
+                    self.emit_character_token(char::REPLACEMENT_CHARACTER);
+                }
+
+                // Anything else
+                // Switch to the script data double escaped state. Emit the current input character as a character token.
+                _ => {
+                    self.switch_to(State::ScriptDataDoubleEscaped);
+                    self.emit_character_token(c);
+                }
+            }
+        } else {
+            // EOF
+            // This is an eof-in-script-html-comment-like-text parse error. Emit an end-of-file token.
+            self.emit_end_of_file_token();
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-double-escaped-less-than-sign-state
+    fn script_data_double_escaped_less_than_sign_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            // U+002F SOLIDUS (/)
+            // Set the temporary buffer to the empty string. Switch to the script data double escape end state. Emit a U+002F SOLIDUS character token.
+            if c == '/' {
+                self.set_temporary_buffer_to_empty_string();
+                self.switch_to(State::ScriptDataDoubleEscapeEnd);
+                self.emit_character_token('/');
+            }
+            // Anything else
+            // Reconsume in the script data double escaped state.
+            else {
+                self.reconsume_in(State::ScriptDataDoubleEscaped);
+            }
+        } else {
+            // EOF
+            // Reconsume in the script data double escaped state.
+            self.reconsume_in(State::ScriptDataDoubleEscaped);
+        }
+    }
+
+    // https://html.spec.whatwg.org/#script-data-double-escape-end-state
+    fn script_data_double_escape_end_state(&mut self) {
+        // Consume the next input character:
+        if let Some(c) = self.consume() {
+            match c {
+                // U+0009 CHARACTER TABULATION (tab)
+                // U+000A LINE FEED (LF)
+                // U+000C FORM FEED (FF)
+                // U+0020 SPACE
+                // U+002F SOLIDUS (/)
+                // U+003E GREATER-THAN SIGN (>)
+                // If the temporary buffer is the string "script", then switch to the script data escaped state.
+                // Otherwise, switch to the script data double escaped state. Emit the current input character as a character token.
+                '\u{0009}' | '\u{000A}' | '\u{000C}' | ' ' | '/' | '>' => {
+                    if self.get_temporary_buffer() == "script" {
+                        self.switch_to(State::ScriptDataEscaped);
+                    } else {
+                        self.switch_to(State::ScriptDataDoubleEscaped);
+                        self.emit_character_token(c);
+                    }
+                }
+
+                // ASCII upper alpha
+                // Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the temporary buffer.
+                // Emit the current input character as a character token.
+                'A'..='Z' => {
+                    self.append_character_to_temporary_buffer((c as u8 + 0x20) as char);
+                    self.emit_character_token(c);
+                }
+
+                // ASCII lower alpha
+                // Append the current input character to the temporary buffer.
+                // Emit the current input character as a character token.
+                'a'..='z' => {
+                    self.append_character_to_temporary_buffer(c);
+                    self.emit_character_token(c);
+                }
+
+                // Anything else
+                // Reconsume in the script data double escaped state.
+                _ => {
+                    self.reconsume_in(State::ScriptDataDoubleEscaped);
+                }
+            }
+        } else {
+            // EOF
+            // Reconsume in the script data double escaped state.
+            self.reconsume_in(State::ScriptDataDoubleEscaped);
+        }
+    }
+
     fn consume_system_keyword(&mut self) {
         let goal = vec!['S', 'Y', 'S', 'T', 'E', 'M'];
 
@@ -2560,17 +3719,56 @@ impl<'a> Scanner<'a> {
         self.current_token = Some(Token::new_end_tag());
     }
 
+    // https://html.spec.whatwg.org/#appropriate-end-tag-token
+    fn current_end_tag_token_is_appropriate(&mut self) -> bool {
+        match self.current_token.clone() {
+            Some(Token::Tag(tag)) => {
+                if let Some(open_name) = self.open_tags.last() {
+                    open_name == &tag.tag_name
+                } else {
+                    false
+                }
+            }
+            Some(_) => false,
+            None => false,
+        }
+    }
+
     fn emit_current_token(&mut self) {
-        self.emit_current_tag_token();
+        match self.current_token.take() {
+            Some(token) => self.tokens.push_back(token),
+            None => {}
+        }
     }
 
     fn emit_current_comment_token(&mut self) {
-        self.emit_current_tag_token();
+        match self.current_token.take() {
+            Some(token) => {
+                if let Token::Comment(comment) = token {
+                    self.tokens.push_back(Token::Comment(comment));
+                }
+            }
+            None => {}
+        }
     }
 
     fn emit_current_tag_token(&mut self) {
         match self.current_token.take() {
-            Some(token) => self.tokens.push_back(token),
+            Some(token) => {
+                if let Token::Tag(tag) = token {
+                    if !tag.is_end_tag {
+                        self.open_tags.push(tag.tag_name.clone());
+                        self.tokens.push_back(Token::Tag(tag));
+                    } else {
+                        if let Some(name) = self.open_tags.last() {
+                            if name == &tag.tag_name {
+                                self.open_tags.pop();
+                                self.tokens.push_back(Token::Tag(tag));
+                            }
+                        }
+                    }
+                }
+            }
             None => {}
         }
     }
@@ -2621,7 +3819,7 @@ mod tests {
     use crate::Scanner;
 
     #[test]
-    fn test_basic_html() {
+    fn test_comment() {
         let test = "<!--Hello World-->";
         let scanner = Scanner::new(test);
 
@@ -2629,16 +3827,8 @@ mod tests {
     }
 
     #[test]
-    fn test_comment_with_less_than_sign() {
-        let test = "<!--Hello < World-->";
-        let scanner = Scanner::new(test);
-
-        println!("{:?}", scanner.tokens);
-    }
-
-    #[test]
-    fn test_comment_with_ampersand() {
-        let test = "<!--Hello & World-->";
+    fn test_basic_html() {
+        let test = "<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Hello World</h1></body></html>";
         let scanner = Scanner::new(test);
 
         println!("{:?}", scanner.tokens);

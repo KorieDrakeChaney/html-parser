@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Deref};
+use std::collections::HashMap;
 
 use lazy_static::lazy_static;
 
@@ -2299,75 +2299,5 @@ pub fn replace_control(character_reference_code: u32) -> u32 {
         0x97 => 0x2014,
         0x98 => 0x02DC,
         _ => character_reference_code,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashMap;
-    #[test]
-    fn test_max_named_character_reference() {
-        let mut max = 0;
-        for (name, _) in ENTITIES.iter() {
-            if name.len() > max {
-                max = name.len();
-            }
-        }
-        println!("max: {};", max);
-    }
-
-    #[test]
-    fn test_count_amount_of_character_reference_that_start_with() {
-        let letters: [char; 26] = [
-            'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
-            'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-        ];
-
-        for letter in letters.iter() {
-            let mut count = 0;
-            for (&name, _) in ENTITIES.iter() {
-                if &name[1..].starts_with(*letter)
-                    | &name[1..].starts_with(letter.to_ascii_uppercase())
-                {
-                    count += 1;
-                }
-            }
-            println!("letter: {}, count: {};", letter, count);
-        }
-    }
-
-    #[test]
-    fn test_min_named_character_reference() {
-        let mut min = 100;
-        for (name, _) in ENTITIES.iter() {
-            if name.len() < min {
-                min = name.len();
-            }
-        }
-        println!("min: {};", min);
-    }
-
-    #[test]
-    fn test_max_named_character_without_semicolon() {
-        let mut max = 0;
-        for (name, _) in ENTITIES.iter() {
-            if !name.ends_with(';') && name.len() > max {
-                max = name.len();
-            }
-        }
-        println!("max: {};", max);
-    }
-
-    #[test]
-    fn test_get_names_without_semicolon() {
-        let mut names_without_semicolon = Vec::new();
-
-        for (name, _) in ENTITIES.iter() {
-            if !name.ends_with(';') {
-                names_without_semicolon.push(name);
-                println!("\"{}\",", name);
-            }
-        }
     }
 }

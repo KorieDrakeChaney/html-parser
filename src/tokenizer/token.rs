@@ -182,7 +182,7 @@ impl std::fmt::Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Token::DOCTYPE(doctype) => {
-                write!(f, "<!DOCTYPE html>")
+                write!(f, "{}", doctype)
             }
             Token::Tag(tag) => write!(f, "{}", tag),
             Token::Comment(comment) => write!(f, "<!--{}-->", comment),
