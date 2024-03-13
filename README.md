@@ -2,5 +2,5 @@
 
 ## Features
 
-- Tokenizer [*]
-- Parser [ ]
+- [x] Tokenizer
+- [ ] Parser
