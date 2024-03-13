@@ -136,8 +136,8 @@ impl<'a> Tokenizer<'a> {
                 State::CDATASectionEnd => self.cdata_section_end_state(),
                 State::RCDATA => self.rcdata_state(),
                 State::RAWTEXT => self.rawtext_state(),
-                State::ScriptData => self.script_data_state(),
                 State::PLAINTEXT => self.plaintext_state(),
+                State::ScriptData => self.script_data_state(),
                 State::RCDATALessThanSign => self.rcdata_less_than_sign_state(),
                 State::RCDATAEndTagOpen => self.rcdata_end_tag_open_state(),
                 State::RCDATAEndTagName => self.rcdata_end_tag_name_state(),
@@ -254,30 +254,30 @@ impl<'a> Tokenizer<'a> {
         // Consume the next input character:
         if let Some(c) = self.consume() {
             match c {
+                // ASCII alpha
+                // Create a new end tag token, set its tag name to the empty string. Reconsume in the tag name state.
+                'A'..='Z' | 'a'..='z' => {
+                    self.create_new_end_tag_token();
+                    self.reconsume_in(State::TagName);
+                }
+
                 // U+003E GREATER-THAN SIGN (>)
                 // This is a missing-end-tag-name parse error. Switch to the data state.
                 '>' => {
                     self.switch_to(State::Data);
                 }
+                // Anything else
+                // This is an invalid-first-character-of-tag-name parse error. Create a comment token whose data is the empty string. Reconsume in the bogus comment state.
                 _ => {
-                    if c.is_alphabetic() {
-                        // ASCII alpha
-                        // Create a new end tag token, set its tag name to the empty string. Reconsume in the tag name state.
-                        self.create_new_end_tag_token();
-                        self.reconsume_in(State::TagName);
-                    } else {
-                        // Anything else
-                        // This is an invalid-first-character-of-tag-name parse error. Create a comment token whose data is the empty string. Reconsume in the bogus comment state.
-                        self.reconsume_in(State::BogusComment);
-                        self.create_new_comment_token();
-                    }
+                    self.create_new_comment_token();
+                    self.reconsume_in(State::BogusComment);
                 }
             }
         } else {
             // EOF
             // This is an eof-before-tag-name parse error. Emit a U+003C LESS-THAN SIGN character token, a U+002F SOLIDUS character token, and an end-of-file token.
-            self.emit_character_token('\u{00C}');
-            self.emit_character_token('\u{002F}');
+            self.emit_character_token('<');
+            self.emit_character_token('/');
             self.emit_end_of_file_token();
         }
     }
@@ -307,7 +307,7 @@ impl<'a> Tokenizer<'a> {
                     self.emit_current_tag_token()
                 }
                 // ASCII upper alpha
-                // Append the lowercase version of the current input character (add 0x0020 to the character’s code point) to the current tag token’s tag name. Append the current input character to the current tag token’s tag name.
+                // Append the lowercase version of the current input character (add 0x0020 to the character’s code point) to the current tag token’s tag name.
                 'A'..='Z' => {
                     self.append_character_to_current_tag_token((c as u8 + 0x0020) as char);
                 }
@@ -339,7 +339,9 @@ impl<'a> Tokenizer<'a> {
                 // U+000C FORM FEED (FF)
                 // U+0020 SPACE
                 // Ignore the character.
-                '\u{0009}' | '\u{000A}' | '\u{000C}' | '\u{0020}' => {}
+                '\u{0009}' | '\u{000A}' | '\u{000C}' | '\u{0020}' => {
+                    // Ignore the character.
+                }
                 // U+002F SOLIDUS (/)
                 // U+003E GREATER-THAN SIGN (>)
                 // Reconsume in the after attribute name state.
@@ -350,9 +352,9 @@ impl<'a> Tokenizer<'a> {
                 // This is an unexpected-equals-sign-before-attribute-name parse error. Start a new attribute in the current tag token.  Set that attribute's name to the current input character,
                 // and its value to the empty string. Switch to the attribute name state.
                 '=' => {
-                    self.switch_to(State::AttributeName);
                     self.start_a_new_attribute();
                     self.append_character_to_attribute_name(c);
+                    self.switch_to(State::AttributeName);
                 }
                 // Anything else
                 // Start a new attribute in the current tag token. Set that attribute's name and value to the empty string. Reconsume in the attribute name state.
@@ -2208,7 +2210,7 @@ impl<'a> Tokenizer<'a> {
                 // Anything else
                 // Emit the current input character as a character token.
                 _ => {
-                    self.emit_character_token(c);
+                    self.emit_current_input_character();
                 } // NOTE:
                   // U+0000 NULL characters are handled in the tree construction stage, as part of the in foreign content insertion mode, which is the only place where
                   // CDATA sections can appear.
@@ -2308,7 +2310,7 @@ impl<'a> Tokenizer<'a> {
                 // Anything else
                 // Emit the current input character as a character token.
                 _ => {
-                    self.emit_character_token(c);
+                    self.emit_current_input_character();
                 }
             }
         } else {
@@ -2337,9 +2339,7 @@ impl<'a> Tokenizer<'a> {
 
                 // Anything else
                 // Emit the current input character as a character token.
-                _ => {
-                    self.emit_character_token(c);
-                }
+                _ => self.emit_current_input_character(),
             }
         } else {
             // EOF
@@ -2368,7 +2368,7 @@ impl<'a> Tokenizer<'a> {
                 // Anything else
                 // Emit the current input character as a character token.
                 _ => {
-                    self.emit_character_token(c);
+                    self.emit_current_input_character();
                 }
             }
         } else {
@@ -2389,7 +2389,7 @@ impl<'a> Tokenizer<'a> {
             } else {
                 // Anything else
                 // Emit the current input character as a character token.
-                self.emit_character_token(c);
+                self.emit_current_input_character();
             }
         } else {
             // EOF
@@ -2907,7 +2907,7 @@ impl<'a> Tokenizer<'a> {
                 // Anything else
                 // Emit the current input character as a character token.
                 _ => {
-                    self.emit_character_token(c);
+                    self.emit_current_input_character();
                 }
             }
         } else {
@@ -2946,7 +2946,7 @@ impl<'a> Tokenizer<'a> {
                 // Switch to the script data escaped state. Emit the current input character as a character token.
                 _ => {
                     self.switch_to(State::ScriptDataEscaped);
-                    self.emit_character_token(c);
+                    self.emit_current_input_character();
                 }
             }
         } else {
@@ -2991,7 +2991,7 @@ impl<'a> Tokenizer<'a> {
                 // Switch to the script data escaped state. Emit the current input character as a character token.
                 _ => {
                     self.switch_to(State::ScriptDataEscaped);
-                    self.emit_character_token(c);
+                    self.emit_current_input_character();
                 }
             }
         } else {
@@ -3177,7 +3177,7 @@ impl<'a> Tokenizer<'a> {
                         self.switch_to(State::ScriptDataDoubleEscaped);
                     } else {
                         self.switch_to(State::ScriptDataEscaped);
-                        self.emit_character_token(c);
+                        self.emit_current_input_character();
                     }
                 }
 
@@ -3186,7 +3186,7 @@ impl<'a> Tokenizer<'a> {
                 // Emit the current input character as a character token.
                 'A'..='Z' => {
                     self.append_character_to_temporary_buffer((c as u8 + 0x20) as char);
-                    self.emit_character_token(c);
+                    self.emit_current_input_character();
                 }
 
                 // ASCII lower alpha
@@ -3194,7 +3194,7 @@ impl<'a> Tokenizer<'a> {
                 // Emit the current input character as a character token.
                 'a'..='z' => {
                     self.append_character_to_temporary_buffer(c);
-                    self.emit_character_token(c);
+                    self.emit_current_input_character();
                 }
 
                 // Anything else
@@ -3238,7 +3238,7 @@ impl<'a> Tokenizer<'a> {
                 // Anything else
                 // Emit the current input character as a character token.
                 _ => {
-                    self.emit_character_token(c);
+                    self.emit_current_input_character();
                 }
             }
         } else {
@@ -3278,7 +3278,7 @@ impl<'a> Tokenizer<'a> {
                 // Switch to the script data double escaped state. Emit the current input character as a character token.
                 _ => {
                     self.switch_to(State::ScriptDataDoubleEscaped);
-                    self.emit_character_token(c);
+                    self.emit_current_input_character();
                 }
             }
         } else {
@@ -3323,7 +3323,7 @@ impl<'a> Tokenizer<'a> {
                 // Switch to the script data double escaped state. Emit the current input character as a character token.
                 _ => {
                     self.switch_to(State::ScriptDataDoubleEscaped);
-                    self.emit_character_token(c);
+                    self.emit_current_input_character();
                 }
             }
         } else {
@@ -3374,7 +3374,7 @@ impl<'a> Tokenizer<'a> {
                         self.switch_to(State::ScriptDataEscaped);
                     } else {
                         self.switch_to(State::ScriptDataDoubleEscaped);
-                        self.emit_character_token(c);
+                        self.emit_current_input_character();
                     }
                 }
 
@@ -3383,7 +3383,7 @@ impl<'a> Tokenizer<'a> {
                 // Emit the current input character as a character token.
                 'A'..='Z' => {
                     self.append_character_to_temporary_buffer((c as u8 + 0x20) as char);
-                    self.emit_character_token(c);
+                    self.emit_current_input_character();
                 }
 
                 // ASCII lower alpha
@@ -3391,7 +3391,7 @@ impl<'a> Tokenizer<'a> {
                 // Emit the current input character as a character token.
                 'a'..='z' => {
                     self.append_character_to_temporary_buffer(c);
-                    self.emit_character_token(c);
+                    self.emit_current_input_character();
                 }
 
                 // Anything else
@@ -3757,16 +3757,20 @@ impl<'a> Tokenizer<'a> {
         match self.current_token.take() {
             Some(token) => {
                 if let Token::Tag(tag) = token {
-                    if !tag.is_end_tag {
-                        self.open_tags.push(tag.tag_name.clone());
-                        self.tokens.push_back(Token::Tag(tag));
-                    } else {
-                        if let Some(name) = self.open_tags.last() {
-                            if name == &tag.tag_name {
-                                self.open_tags.pop();
-                                self.tokens.push_back(Token::Tag(tag));
+                    if !tag.self_closing {
+                        if tag.is_end_tag {
+                            if let Some(name) = self.open_tags.last() {
+                                if name == &tag.tag_name {
+                                    self.open_tags.pop();
+                                    self.tokens.push_back(Token::Tag(tag));
+                                }
                             }
+                        } else {
+                            self.open_tags.push(tag.tag_name.clone());
+                            self.tokens.push_back(Token::Tag(tag));
                         }
+                    } else {
+                        self.tokens.push_back(Token::Tag(tag));
                     }
                 }
             }
@@ -3817,6 +3821,8 @@ impl<'a> Tokenizer<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Read;
+
     use crate::{
         tokenizer::token::{Doctype, Tag, Token},
         Tokenizer,
@@ -3864,5 +3870,20 @@ mod tests {
             Token::EOF,
         ];
         assert_eq!(scanner.tokens, result);
+    }
+
+    #[test]
+    fn test_read_file() {
+        let mut buffer = String::new();
+
+        if let Ok(mut file) = std::fs::File::open("index.html") {
+            if let Ok(_) = file.read_to_string(&mut buffer) {
+                let scanner = Tokenizer::new(&buffer);
+
+                for token in scanner.tokens {
+                    println!("{:?}", token);
+                }
+            }
+        }
     }
 }
