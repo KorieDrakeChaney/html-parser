@@ -2,7 +2,6 @@ mod state;
 mod token;
 
 use state::State;
-use token::Tag;
 
 pub use token::Token;
 
