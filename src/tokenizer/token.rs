@@ -41,6 +41,15 @@ impl Doctype {
         }
     }
 
+    pub fn new_with_name(name: String) -> Self {
+        Doctype {
+            name,
+            public_id: None,
+            system_id: None,
+            force_quirks: false,
+        }
+    }
+
     pub fn set_quirks_flag_to_on(&mut self) {
         self.force_quirks = true;
     }
@@ -102,6 +111,26 @@ impl Tag {
             self_closing: false,
             attributes: Vec::new(),
             is_end_tag: true,
+            self_closing_acknowledged: false,
+        }
+    }
+
+    pub fn new_end_tag_with_name(name: String) -> Self {
+        Tag {
+            tag_name: name,
+            self_closing: false,
+            attributes: Vec::new(),
+            is_end_tag: true,
+            self_closing_acknowledged: false,
+        }
+    }
+
+    pub fn new_start_tag_with_name(name: String) -> Self {
+        Tag {
+            tag_name: name,
+            self_closing: false,
+            attributes: Vec::new(),
+            is_end_tag: false,
             self_closing_acknowledged: false,
         }
     }

@@ -2,7 +2,9 @@ mod state;
 mod token;
 
 use state::State;
-use token::Token;
+use token::Tag;
+
+pub use token::Token;
 
 use std::{collections::VecDeque, iter::Peekable, str::Chars};
 
@@ -3816,21 +3818,52 @@ impl<'a> Scanner<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::Scanner;
+    use crate::{
+        tokenizer::token::{Doctype, Tag, Token},
+        Scanner,
+    };
 
     #[test]
     fn test_comment() {
         let test = "<!--Hello World-->";
         let scanner = Scanner::new(test);
-
-        println!("{:?}", scanner.tokens);
+        let result = vec![Token::Comment("Hello World".to_string()), Token::EOF];
+        assert_eq!(scanner.tokens, result);
     }
 
     #[test]
     fn test_basic_html() {
         let test = "<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Hello World</h1></body></html>";
         let scanner = Scanner::new(test);
-
-        println!("{:?}", scanner.tokens);
+        let result = vec![
+            Token::DOCTYPE(Doctype::new_with_name("html".to_string())),
+            Token::Tag(Tag::new_start_tag_with_name("html".to_string())),
+            Token::Tag(Tag::new_start_tag_with_name("head".to_string())),
+            Token::Tag(Tag::new_start_tag_with_name("title".to_string())),
+            Token::Char('T'),
+            Token::Char('e'),
+            Token::Char('s'),
+            Token::Char('t'),
+            Token::Tag(Tag::new_end_tag_with_name("title".to_string())),
+            Token::Tag(Tag::new_end_tag_with_name("head".to_string())),
+            Token::Tag(Tag::new_start_tag_with_name("body".to_string())),
+            Token::Tag(Tag::new_start_tag_with_name("h1".to_string())),
+            Token::Char('H'),
+            Token::Char('e'),
+            Token::Char('l'),
+            Token::Char('l'),
+            Token::Char('o'),
+            Token::Char(' '),
+            Token::Char('W'),
+            Token::Char('o'),
+            Token::Char('r'),
+            Token::Char('l'),
+            Token::Char('d'),
+            Token::Tag(Tag::new_end_tag_with_name("h1".to_string())),
+            Token::Tag(Tag::new_end_tag_with_name("body".to_string())),
+            Token::Tag(Tag::new_end_tag_with_name("html".to_string())),
+            Token::EOF,
+        ];
+        assert_eq!(scanner.tokens, result);
     }
 }
